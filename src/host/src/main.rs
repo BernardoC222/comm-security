@@ -9,8 +9,9 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use tokio::signal;
+
 use nanoid::nanoid;
+use tokio::signal;
 
 use host::{fire, join_game, report, wave, win, FormData};
 use std::net::SocketAddr;
@@ -60,7 +61,10 @@ fn render_html(
     let response_html = if let Some(response) = response {
         if response == "OK" {
             if gameid != "" {
-                format!("Playing Game: <b>{}</b> with fleet's ID: <b>{}</b> ", gameid, fleetid)
+                format!(
+                    "Playing Game: <b>{}</b> with fleet's ID: <b>{}</b> ",
+                    gameid, fleetid
+                )
             } else {
                 "Not in game".to_string()
             }
