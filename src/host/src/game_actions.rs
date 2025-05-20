@@ -6,6 +6,16 @@ use risc0_zkvm::{default_prover, guest::env, ExecutorEnv};
 
 use crate::{send_receipt, unmarshal_data, unmarshal_fire, unmarshal_report, FormData};
 
+fn generate_join_receipt(base_inputs: BaseInputs) -> risc0_zkvm::Receipt {
+    let env = ExecutorEnv::builder()
+        .write(&base_inputs)
+        .unwrap()
+        .build()
+        .unwrap();
+    let prover = default_prover();
+    prover.prove(env, JOIN_ELF).unwrap().receipt
+}
+
 pub async fn join_game(idata: FormData) -> String {
     let (gameid, fleetid, board, random) = match unmarshal_data(&idata) {
         Ok(values) => values,
@@ -19,6 +29,13 @@ pub async fn join_game(idata: FormData) -> String {
     for chunk in board.chunks(2) {
         if let [x, y] = chunk {
             fleet.push((*x, *y));
+        }
+    }
+
+    // Validação: garantir que todos os navios estão dentro do tabuleiro
+    for &(x, y) in &fleet {
+        if x >= 10 || y >= 10 {
+            return format!("Erro: Navio fora do tabuleiro (x={}, y={})", x, y);
         }
     }
 
@@ -37,16 +54,19 @@ pub async fn join_game(idata: FormData) -> String {
         random,
     };
 
-    // Cria o ambiente de execução
-    let env = ExecutorEnv::builder()
-        .write(&base_inputs)
-        .unwrap()
-        .build()
-        .unwrap();
+    // Chama a função síncrona para criar o receipt
+    let receipt = generate_join_receipt(base_inputs);
 
-    // Prova e gera o receipt
-    let prover = default_prover();
-    let receipt = prover.prove(env, JOIN_ELF).unwrap().receipt;
+    // Cria o ambiente de execução
+    //let env = ExecutorEnv::builder()
+    //    .write(&base_inputs)
+    //    .unwrap()
+    //    .build()
+    //    .unwrap();
+    //
+    //// Prova e gera o receipt
+    //let prover = default_prover();
+    //let receipt = prover.prove(env, JOIN_ELF).unwrap().receipt;
 
     // Uncomment the following line when you are ready to send the receipt
     send_receipt(Command::Join, receipt).await
