@@ -39,6 +39,7 @@ fn main() {
 
     // Preencher o jornal com o hash da frota
     let mut output = BaseJournal::default();
+    output.fleetid = input.fleetid.clone();
     output.gameid = input.gameid.clone();
     output.fleet = input.fleet.clone();
     output.board = Digest::try_from(hash.as_slice()).unwrap();

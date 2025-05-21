@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
-use fleetcore::{BaseJournal, Command, FireJournal, CommunicationData, ReportJournal};
+use fleetcore::{BaseJournal, Command, CommunicationData, FireJournal, ReportJournal};
 use methods::{FIRE_ID, JOIN_ID, REPORT_ID, WAVE_ID, WIN_ID};
 
 struct Player {
@@ -130,7 +130,10 @@ async fn smart_contract(
 
 fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
     if input_data.receipt.verify(JOIN_ID).is_err() {
-        shared.tx.send("Attempting to join game with invalid receipt".to_string()).unwrap();
+        shared
+            .tx
+            .send("Attempting to join game with invalid receipt".to_string())
+            .unwrap();
         return "Could not verify receipt".to_string();
     }
     let data: BaseJournal = input_data.receipt.journal.decode().unwrap();
@@ -140,21 +143,26 @@ fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
         next_player: Some(data.fleet.clone()),
         next_report: None,
     });
-    let player_inserted = game.pmap.entry(data.fleet.clone()).or_insert_with(|| Player {
-        name: data.fleet.clone(),
-        current_state: data.board.clone(),
-    }).name == data.fleet;
+    let player_inserted = game
+        .pmap
+        .entry(data.fleet.clone())
+        .or_insert_with(|| Player {
+            name: data.fleet.clone(),
+            current_state: data.board.clone(),
+        })
+        .current_state
+        == data.board;
     let mesg = if player_inserted {
-        format!("Joined game {}", data.gameid)
+        format!("Joined game {} com fleet ID: {}", data.gameid, data.fleetid)
     } else {
-        format!("Player already in game {}", data.gameid)
+        format!("Player {} already in game {}", data.fleetid, data.gameid)
     };
     shared.tx.send(mesg).unwrap();
     "OK".to_string()
 }
 
 fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
-     // TO DO:
+    // TO DO:
     "OK".to_string()
 }
 

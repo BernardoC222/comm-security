@@ -1,10 +1,11 @@
+use risc0_zkvm::{Digest, Receipt};
 use serde::{Deserialize, Serialize};
-use risc0_zkvm::{Receipt, Digest};
 
 // Struct sent by the rust code for input on the methods join, wave and win
 // The struct is read by the zkvm code and the data is used to generate the output Journal
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BaseInputs {
+    pub fleetid: String,
     pub gameid: String,
     pub fleet: String,
     pub board: Vec<u8>,
@@ -15,6 +16,7 @@ pub struct BaseInputs {
 // The struct is read by the zkvm code and the data is used to generate the output Journal
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FireInputs {
+    pub fleetid: String,
     pub gameid: String,
     pub fleet: String,
     pub board: Vec<u8>,
@@ -24,11 +26,17 @@ pub struct FireInputs {
 }
 
 // Enum used to define the command that will be sent to the server by the host in the communication packet
-#[derive(Deserialize,Serialize)]
-pub enum Command {Join, Fire, Report, Wave, Win}
+#[derive(Deserialize, Serialize)]
+pub enum Command {
+    Join,
+    Fire,
+    Report,
+    Wave,
+    Win,
+}
 
 // Struct used to specify the packet sent from the client to the blockchain server
-#[derive(Deserialize,Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct CommunicationData {
     pub cmd: Command,
     pub receipt: Receipt,
@@ -37,6 +45,7 @@ pub struct CommunicationData {
 // Struct to specify the  output journal for join, wave and win methods
 #[derive(Deserialize, PartialEq, Eq, Serialize, Default)]
 pub struct BaseJournal {
+    pub fleetid: String,
     pub gameid: String,
     pub fleet: String,
     pub board: Digest,
@@ -45,6 +54,7 @@ pub struct BaseJournal {
 // Struct to specify the  output journal for fire method
 #[derive(Deserialize, PartialEq, Eq, Serialize, Default)]
 pub struct FireJournal {
+    pub fleetid: String,
     pub gameid: String,
     pub fleet: String,
     pub board: Digest,
@@ -60,5 +70,5 @@ pub struct ReportJournal {
     pub report: String,
     pub pos: u8,
     pub board: Digest,
-    pub next_board: Digest
+    pub next_board: Digest,
 }
