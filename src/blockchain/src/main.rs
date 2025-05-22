@@ -162,7 +162,65 @@ fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
 }
 
 fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
-    // TO DO:
+    if input_data.receipt.verify(FIRE_ID).is_err() {
+        let _ = shared
+            .tx
+            .send("Tentativa de disparo com receipt inválido".to_string());
+        return "Could not verify receipt".to_string();
+    }
+
+    let data: FireJournal = match input_data.receipt.journal.decode() {
+        Ok(d) => d,
+        Err(_) => {
+            let _ = shared.tx.send("Erro a decodificar o FireJournal".to_string());
+            return "Failed to decode journal".to_string();
+        }
+    };
+
+    // Trancar o mapa de jogos para alterar o estado
+    let mut gmap = shared.gmap.lock().unwrap();
+
+    let game = match gmap.get_mut(&data.gameid) {
+        Some(g) => g,
+        None => {
+            let _ = shared.tx.send(format!("Jogo {} não encontrado", data.gameid));
+            return format!("Game {} not found", data.gameid);
+        }
+    };
+
+    // Lógica simples para demonstrar:
+    // Verifica se é a vez do jogador correto
+    if game.next_player.as_ref() != Some(&data.fleetid) {
+        let _ = shared.tx.send(format!("Não é o turno do jogador {}", data.fleetid));
+        return "Not your turn".to_string();
+    }
+
+    // Atualizar estado do jogador alvo, ou lógica do jogo...
+    // Por exemplo, poderia marcar o disparo na board atual do jogador
+
+    // Vamos apenas atualizar o current_state do jogador para o novo estado recebido no journal
+    if let Some(player) = game.pmap.get_mut(&data.fleet) {
+        player.current_state = data.board.clone();
+    }
+
+    // Definir o próximo jogador
+    let next_player = game
+        .pmap
+        .keys()
+        .filter(|k| *k != &data.fleet)
+        .choose(&mut *shared.rng.lock().unwrap());
+
+    game.next_player = next_player.cloned();
+
+    // Envia mensagem para broadcast
+    let msg = format!(
+        "Jogador {} disparou na posição {}. Próximo jogador: {}",
+        data.fleetid,
+        xy_pos(data.pos),
+        game.next_player
+    );
+    let _ = shared.tx.send(msg);
+
     "OK".to_string()
 }
 
