@@ -190,7 +190,7 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
 
     // Lógica simples para demonstrar:
     // Verifica se é a vez do jogador correto
-    if game.next_player.as_ref() != Some(&data.fleetid) {
+    if game.next_player.as_ref() != Some(&data.fleet) {
         let _ = shared.tx.send(format!("Não é o turno do jogador {}", data.fleetid));
         return "Not your turn".to_string();
     }
@@ -214,7 +214,7 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
 
     // Envia mensagem para broadcast
     let msg = format!(
-        "Jogador {} disparou na posição {}. Próximo jogador: {}",
+        "Jogador {} disparou na posição {}. Próximo jogador: {:?}",
         data.fleetid,
         xy_pos(data.pos),
         game.next_player
