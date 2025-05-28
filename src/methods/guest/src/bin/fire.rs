@@ -41,9 +41,13 @@ fn main() {
         fleet: input.fleet,
         board: board_digest,
         target: input.target,
-        pos: if hit { 1 } else { 0 },
+        pos: input.pos,
+        check : if hit { 1 } else { 0 },
     };
     //let output = FireJournal::default();
+
+    println!("DEBUG: input.pos = {}", input.pos);  // Adicione este debug
+
 
     // write public output to the journal
     env::commit(&output);
