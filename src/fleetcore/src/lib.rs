@@ -60,6 +60,7 @@ pub struct FireJournal {
     pub board: Digest,
     pub target: String,
     pub pos: u8,
+    pub check: u8, // 1 if hit, 0 if miss
 }
 
 // Struct to specify the  output journal for report method
