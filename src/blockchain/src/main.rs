@@ -140,7 +140,7 @@ fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
     let mut gmap = shared.gmap.lock().unwrap();
     let game = gmap.entry(data.gameid.clone()).or_insert(Game {
         pmap: HashMap::new(),
-        next_player: Some(data.fleet.clone()),
+        next_player: Some(data.fleetid.clone()),
         next_report: None,
     });
     let player_inserted = game
@@ -172,7 +172,9 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
     let data: FireJournal = match input_data.receipt.journal.decode() {
         Ok(d) => d,
         Err(_) => {
-            let _ = shared.tx.send("Erro a decodificar o FireJournal".to_string());
+            let _ = shared
+                .tx
+                .send("Erro a decodificar o FireJournal".to_string());
             return "Failed to decode journal".to_string();
         }
     };
@@ -183,15 +185,19 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
     let game = match gmap.get_mut(&data.gameid) {
         Some(g) => g,
         None => {
-            let _ = shared.tx.send(format!("Jogo {} não encontrado", data.gameid));
+            let _ = shared
+                .tx
+                .send(format!("Jogo {} não encontrado", data.gameid));
             return format!("Game {} not found", data.gameid);
         }
     };
 
     // Lógica simples para demonstrar:
     // Verifica se é a vez do jogador correto
-    if game.next_player.as_ref() != Some(&data.fleet) {
-        let _ = shared.tx.send(format!("Não é o turno do jogador {}", data.fleetid));
+    if game.next_player.as_ref() != Some(&data.fleetid) {
+        let _ = shared
+            .tx
+            .send(format!("Não é o turno do jogador {}", data.fleetid));
         return "Not your turn".to_string();
     }
 
@@ -203,32 +209,30 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         player.current_state = data.board.clone();
     }
 
-     //Definir o próximo jogador
+    //Definir o próximo jogador
     let next_player = game
-       .pmap
+        .pmap
         .keys()
         .filter(|k| *k != &data.fleet)
         .choose(&mut *shared.rng.lock().unwrap());
 
-    game.next_player = next_player.cloned();
+    //game.next_player = next_player.cloned();
+    game.next_player = Some(data.target.clone());
 
     // Envia mensagem para broadcast
     let msg = format!(
-        "Jogador {} disparou na posição {} e {}. Próximo jogador: {:?}",
+        "Jogador {} disparou na posição {}. Próximo jogador: {:?}",
         data.fleetid,
         xy_pos(data.pos),
-        //game.next_player
-        data.check,
-        data.target
+        game.next_player.as_deref().unwrap_or("N/A") //data.check,
+                                                     //data.target
     );
     let _ = shared.tx.send(msg);
 
     println!("DEBUG: pos = {}, coord = {}", data.pos, xy_pos(data.pos));
 
-
     "OK".to_string()
 }
-
 
 fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String {
     // TO DO:
