@@ -65,6 +65,7 @@ pub struct FireJournal {
 // Struct to specify the  output journal for report method
 #[derive(Deserialize, PartialEq, Eq, Serialize, Default)]
 pub struct ReportJournal {
+    pub fleetid: String, //add information
     pub gameid: String,
     pub fleet: String,
     //pub report: String,

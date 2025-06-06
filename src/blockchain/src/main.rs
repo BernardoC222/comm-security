@@ -27,11 +27,17 @@ use methods::{FIRE_ID, JOIN_ID, REPORT_ID, WAVE_ID, WIN_ID};
 struct Player {
     name: String,
     current_state: Digest,
+    // criar tabela para cada jogador para ter shots
+    shots: [u8; 100], // 0 = sem tiro, 1 = falha, 2 = acerto
+    hit_count: u32,  // 👈 new field
 }
+
 struct Game {
     pmap: HashMap<String, Player>,
     next_player: Option<String>,
     next_report: Option<String>,
+    //current_shot: Option<u8>, // (position_index)
+    current_shot: Option<(u8, String)>, // (position_index, target_player_id)
 }
 
 #[derive(Clone)]
@@ -39,6 +45,7 @@ struct SharedData {
     tx: broadcast::Sender<String>,
     gmap: Arc<Mutex<HashMap<String, Game>>>,
     rng: Arc<Mutex<rand::rngs::StdRng>>,
+    
 }
 
 #[tokio::main]
@@ -115,6 +122,25 @@ fn xy_pos(pos: u8) -> String {
     format!("{}{}", (x + 65) as char, y)
 }
 
+fn pos_str_to_index(pos: &str) -> Option<u8> {
+    if pos.len() < 2 {
+        return None;
+    }
+
+    let col_char = pos.chars().next()?.to_ascii_uppercase();
+    let row_str = &pos[1..];
+
+    let x = (col_char as u8).checked_sub(b'A')?;
+    let y: u8 = row_str.parse().ok()?;
+
+    if x < 10 && y < 10 {
+        Some(y * 10 + x)
+    } else {
+        None
+    }
+}
+
+
 async fn smart_contract(
     Extension(shared): Extension<SharedData>,
     Json(input_data): Json<CommunicationData>,
@@ -141,21 +167,25 @@ fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
     let game = gmap.entry(data.gameid.clone()).or_insert(Game {
         pmap: HashMap::new(),
         next_player: Some(data.fleet.clone()),
-        next_report: None,
+        next_report: None, 
+        current_shot: None,  // initialize current_shot as None
     });
     let player_inserted = game
         .pmap
         .entry(data.fleet.clone())
         .or_insert_with(|| Player {
-            name: data.fleet.clone(),
+            name: data.fleetid.clone(), //estava fleet
             current_state: data.board.clone(),
+            shots: [0; 100], // 👈 Initialize all shots to 0
+            hit_count: 0, // 👈 initialize to 0
         })
         .current_state
         == data.board;
     let mesg = if player_inserted {
-        format!("Joined game {} com fleet ID: {}", data.gameid, data.fleetid)
+        //format!("[Game {}] Player with fleet ID: {} joined", data.gameid, data.fleetid)
+        format!("🎮 [Game {}] 🚀 Player with fleet ID {} joined", data.gameid, data.fleetid)
     } else {
-        format!("Player {} already in game {}", data.fleetid, data.gameid)
+        format!("❌ Player {} already in game {} ", data.fleetid, data.gameid)
     };
     shared.tx.send(mesg).unwrap();
     "OK".to_string()
@@ -188,14 +218,48 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         }
     };
 
+    // Verifica se o jogador alvo está no mesmo jogo procurando pelo nome
+    let player_entry = game.pmap
+        .iter_mut()
+        .find(|(_, p)| p.name == data.target);
+
+    let (target_key, target_player) = match player_entry {
+        Some((key, player)) => (key.clone(), player),
+        None => {
+            let _ = shared.tx.send(format!(
+                "❌ Target player {} not found in game {}",
+                data.target, data.gameid
+            ));
+            return format!("Target player {} is not in this game", data.target);
+        }
+    };
+
+    //update recorded shots grid
+    //let index =  pos_str_to_index(&data.pos.to_string()).unwrap_or(100); // Convert position to index
+    if let Some(target_player) = game.pmap.get_mut(&data.target) {
+        if data.pos < 100 {
+            target_player.shots[data.pos as usize] = 1; // or 2 if it’s a hit, you decide but it is only on the report that we do this
+            let _ = shared.tx.send(format!(
+                "✅ Shot registered at position ({}) for player {}",
+                data.pos,
+                data.target
+            ));
+        }
+    }
+
+    //save current shot for report confirmation
+    //game.current_shot = Some(index);
+    game.current_shot = Some((data.pos, data.target.clone()));
+
+
     // Lógica simples para demonstrar:
     // Verifica se é a vez do jogador correto
     if game.next_player.as_ref() != Some(&data.fleet) {
-        let _ = shared.tx.send(format!("Não é o turno do jogador {}", data.fleetid));
+        let _ = shared.tx.send(format!("❌ Out-of-order fire by player {}", data.fleetid));
         return "Not your turn".to_string();
     }
 
-    // Atualizar estado do jogador alvo, ou lógica do jogo...
+    // Atualizar estado do jogador alvo, ou lógica do jogo ...
     // Por exemplo, poderia marcar o disparo na board atual do jogador
 
     // Vamos apenas atualizar o current_state do jogador para o novo estado recebido no journal
@@ -219,7 +283,8 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
 
     // Envia mensagem para broadcast
     let msg = format!(
-        "Jogador {} disparou na posição {}. Próximo jogador: {:?}",
+        "🎮 [Game {}] 🔫 Player {} shot on position {} of Player {}",
+        data.gameid,
         data.fleetid,
         xy_pos(data.pos),
         //game.next_player
@@ -289,20 +354,67 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
 
     // Envia mensagem para broadcast
     // Choose the word based on data.report
-    let action = match data.report {
-        0 => "acertou",
-        1 => "falhou",
-        _ => "fez algo", // optional fallback
-    };
+    // Choose the word based on data.report
 
-    // Format the message
-    let msg = format!(
-        "Jogador {} na posição {}.",
-        action,
-        xy_pos(data.pos),
-    );
-    let _ = shared.tx.send(msg);
+    // Compare expected values to values on the report
+    // Convert input position to index 
 
+    //input target is data.fleetid
+    
+    // Expected index is the game.current_shot first value
+    // Expected target is the game.current_shot second value
+
+    // Vai buscar o current shot
+    // Vê se o report era o que se estava à espera (só confirma o index)
+    if let Some((expected_index, expected_target)) = &game.current_shot {
+        if *expected_index == data.pos && expected_target == &data.fleetid {
+            // approve the report and process
+            let action = match data.report {
+                0 => { // Hit
+                    if let Some(target_player) = game.pmap.get_mut(&data.fleetid) {
+                        if target_player.shots[data.pos as usize] == 2 {
+                            let _ = shared.tx.send(format!(
+                                "❌ Shot already hit at position ({}) for player {}",
+                                data.pos,
+                                data.fleetid
+                            ));
+                            return "Shot already hit".to_string();
+                        }
+
+                        target_player.hit_count += 1;
+                        if data.pos < 100 {
+                            target_player.shots[data.pos as usize] = 2; // Mark the shot as a hit (2)
+                            let _ = shared.tx.send(format!(
+                                "✅ Shot registered at position ({}) for player {}",
+                                data.pos,
+                                data.fleetid
+                            ));
+                        }
+                    }
+                    "💥 Hit confirmed"
+                },
+                1 => "💨 Missed shot",
+                _ => "fez algo",
+            };
+
+            let msg = format!(
+                "🎮 [Game {}] {} at {}.",
+                data.gameid,
+                action,
+                xy_pos(data.pos),
+            );
+            let _ = shared.tx.send(msg);
+        } else {
+            let _ = shared.tx.send(format!(
+                "🎮 [Game {}] ⚠️ Report mismatch: expected report on shot at position {} on player {}, but got position {} on player {}. Report it correctly please.",
+                data.gameid,
+                xy_pos(*expected_index),
+                expected_target,
+                xy_pos(data.pos),
+                data.fleetid
+            ));
+        }
+    }
     "OK".to_string()
 }
 

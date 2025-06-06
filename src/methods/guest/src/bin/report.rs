@@ -37,6 +37,7 @@ fn main() {
     let board_digest = Digest::try_from(hash.as_slice()).unwrap();
 
     let output = ReportJournal {
+        fleetid: input.fleetid,
         gameid: input.gameid,
         fleet: input.fleet,
         report,
