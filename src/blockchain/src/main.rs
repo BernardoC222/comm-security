@@ -323,52 +323,20 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
         }
     };
 
-    // Lógica simples para demonstrar:
-    // Verifica se é a vez do jogador correto
-    //if game.next_player.as_ref() != Some(&data.fleet) {
-    //    let _ = shared.tx.send(format!("Não é a vez do jogador dar report"));
-    //    return "Not your turn".to_string();
-    //}
+    // Verificar se o jogador correto está fazendo o report
+    // O report deve ser feito pelo jogador que foi atingido, ou seja, o alvo do tiro
+    if game.current_shot.as_ref().map_or(false, |(pos, target)| target != &data.fleetid) {
+        let _ = shared.tx.send(format!(
+            "❌ Player {} tried to report, but they are not the target player.",
+            data.fleetid
+        ));
+        return "You are not the target of the shot.".to_string();
+    }
 
-    // Atualizar estado do jogador alvo, ou lógica do jogo...
-    // Por exemplo, poderia marcar o disparo na board atual do jogador
-
-    // Vamos apenas atualizar o current_state do jogador para o novo estado recebido no journal
-    //if let Some(player) = game.pmap.get_mut(&data.fleet) {
-    //    player.current_state = data.board.clone();
-    //}
-
-    // Definir o próximo jogador
-    //let next_player = game
-    //    .pmap
-    //    .keys()
-    //    .filter(|k| *k != &data.fleet)
-    //    .choose(&mut *shared.rng.lock().unwrap());
-
-    //game.next_player = next_player.cloned();
-
-    //let next_player_str = match &game.next_player {
-    //    Some(fleetid) => fleetid.as_str(),
-    //    None => "None",
-    //};
-
-    // Envia mensagem para broadcast
-    // Choose the word based on data.report
-    // Choose the word based on data.report
-
-    // Compare expected values to values on the report
-    // Convert input position to index 
-
-    //input target is data.fleetid
-    
-    // Expected index is the game.current_shot first value
-    // Expected target is the game.current_shot second value
-
-    // Vai buscar o current shot
-    // Vê se o report era o que se estava à espera (só confirma o index)
+    // Se o jogador correto está fazendo o report, verifique se a posição é válida
     if let Some((expected_index, expected_target)) = &game.current_shot {
         if *expected_index == data.pos && expected_target == &data.fleetid {
-            // approve the report and process
+            // Processar o report
             let action = match data.report {
                 0 => { // Hit
                     if let Some(target_player) = game.pmap.get_mut(&data.fleetid) {
@@ -383,7 +351,7 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
 
                         target_player.hit_count += 1;
                         if data.pos < 100 {
-                            target_player.shots[data.pos as usize] = 2; // Mark the shot as a hit (2)
+                            target_player.shots[data.pos as usize] = 2; // Marca o tiro como acerto (2)
                             let _ = shared.tx.send(format!(
                                 "✅ Shot registered at position ({}) for player {}",
                                 data.pos,
@@ -393,17 +361,28 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
                     }
                     "💥 Hit confirmed"
                 },
-                1 => "💨 Missed shot",
-                _ => "fez algo",
+                1 => "💨 Missed shot",  // Miss
+                _ => "Unknown report",  // fallback case
             };
 
             let msg = format!(
-                "🎮 [Game {}] {} at {}.",
+                "🎮 [Game {}] Player {} {} at {}.",
                 data.gameid,
+                data.fleetid,
                 action,
                 xy_pos(data.pos),
             );
             let _ = shared.tx.send(msg);
+
+            // Atualizar o próximo jogador
+            let next_player = game
+                .pmap
+                .keys()
+                .filter(|k| *k != &data.fleetid)
+                .choose(&mut *shared.rng.lock().unwrap());
+
+            game.next_player = next_player.cloned();
+
         } else {
             let _ = shared.tx.send(format!(
                 "🎮 [Game {}] ⚠️ Report mismatch: expected report on shot at position {} on player {}, but got position {} on player {}. Report it correctly please.",
@@ -417,6 +396,9 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
     }
     "OK".to_string()
 }
+
+
+
 
 fn handle_wave(shared: &SharedData, input_data: &CommunicationData) -> String {
     // TO DO:
