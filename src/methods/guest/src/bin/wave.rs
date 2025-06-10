@@ -1,15 +1,18 @@
 use fleetcore::{BaseInputs, BaseJournal};
 use risc0_zkvm::guest::env;
-//use risc0_zkvm::Digest;
-//use sha2::{Digest as _, Sha256};
 
 fn main() {
-
     // read the input
-    let _input: BaseInputs = env::read();
+    let input: BaseInputs = env::read();
 
-    // TODO: do something with the input
-    let output= BaseJournal::default();
+    // Só pode fazer wave se não tiver barcos vivos (1 = barco não atingido)
+    let has_alive_boat = input.board.iter().any(|&cell| cell == 1);
+    assert!(
+        !has_alive_boat,
+        "Não podes fazer wave: ainda tens barcos vivos!"
+    );
+
+    let output = BaseJournal::default();
 
     // write public output to the journal
     env::commit(&output);
