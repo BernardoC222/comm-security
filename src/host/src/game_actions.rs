@@ -36,6 +36,26 @@ fn generate_report_receipt(inputs: FireInputs) -> risc0_zkvm::Receipt {
     prover.prove(env, REPORT_ELF).unwrap().receipt
 }
 
+fn generate_wave_receipt(inputs: BaseInputs) -> risc0_zkvm::Receipt {
+    let env = ExecutorEnv::builder()
+        .write(&inputs)
+        .unwrap()
+        .build()
+        .unwrap();
+    let prover = default_prover();
+    prover.prove(env, WAVE_ELF).unwrap().receipt
+}
+
+fn generate_win_receipt(inputs: BaseInputs) -> risc0_zkvm::Receipt {
+    let env = ExecutorEnv::builder()
+        .write(&inputs)
+        .unwrap()
+        .build()
+        .unwrap();
+    let prover = default_prover();
+    prover.prove(env, WIN_ELF).unwrap().receipt
+}
+
 pub async fn join_game(idata: FormData) -> String {
     let (gameid, fleetid, board, random) = match unmarshal_data(&idata) {
         Ok(values) => values,
@@ -172,12 +192,36 @@ pub async fn wave(idata: FormData) -> String {
         Ok(values) => values,
         Err(err) => return err,
     };
-    // TO DO: Rebuild the receipt
+
+    // Reconstrói a fleet string (igual ao join)
+    let mut fleet = Vec::new();
+    for &i in &board {
+        let x_f = (i % 10) as u8;
+        let y_f = (i / 10) as u8;
+        fleet.push((x_f, y_f));
+    }
+    let fleet_str = fleet
+        .iter()
+        .map(|(x, y)| format!("{},{}", x, y))
+        .collect::<Vec<String>>()
+        .join(";");
+
+    // Prepara os inputs para o guest
+    let base_inputs = BaseInputs {
+        fleetid,
+        fleet: fleet_str,
+        gameid,
+        board,
+        random,
+    };
+
+    // Chama a função síncrona para criar o receipt
+    let receipt = generate_wave_receipt(base_inputs);
 
     // Uncomment the following line when you are ready to send the receipt
-    //send_receipt(Command::Fire, receipt).await
+    send_receipt(Command::Wave, receipt).await
     // Comment out the following line when you are ready to send the receipt
-    "OK".to_string()
+    //"OK".to_string()
 }
 
 pub async fn win(idata: FormData) -> String {
@@ -185,12 +229,36 @@ pub async fn win(idata: FormData) -> String {
         Ok(values) => values,
         Err(err) => return err,
     };
-    // TO DO: Rebuild the receipt
+
+    // Reconstrói a fleet string (igual ao join)
+    let mut fleet = Vec::new();
+    for &i in &board {
+        let x_f = (i % 10) as u8;
+        let y_f = (i / 10) as u8;
+        fleet.push((x_f, y_f));
+    }
+    let fleet_str = fleet
+        .iter()
+        .map(|(x, y)| format!("{},{}", x, y))
+        .collect::<Vec<String>>()
+        .join(";");
+
+    // Prepara os inputs para o guest
+    let base_inputs = BaseInputs {
+        fleetid,
+        fleet: fleet_str,
+        gameid,
+        board,
+        random,
+    };
+
+    // Chama a função síncrona para criar o receipt
+    let receipt = generate_win_receipt(base_inputs);
 
     // Uncomment the following line when you are ready to send the receipt
-    //send_receipt(Command::Fire, receipt).await
+    send_receipt(Command::Win, receipt).await
     // Comment out the following line when you are ready to send the receipt
-    "OK".to_string()
+    //"OK".to_string()
 }
 
 fn validar_frota(fleet: &[(u8, u8)]) -> Result<(), String> {
