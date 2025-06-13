@@ -1,7 +1,7 @@
 use fleetcore::{BaseInputs, BaseJournal};
 use risc0_zkvm::guest::env;
 use risc0_zkvm::Digest;
-use sha2::{Digest as _, Sha256};
+use sha2::{Digest as ShaDigestTrait, Sha256};
 //use rand::Rng;
 
 fn main() {
@@ -47,7 +47,14 @@ fn main() {
     board_forhash.sort(); // Optional, but ensures consistency
 
     // Gerar o hash da frota 
-    let hash = Sha256::digest(&board_forhash);
+    //let hash = Sha256::digest(&board_forhash);
+
+    // Concatena board e random para o hash
+    let mut hasher = Sha256::new();
+    hasher.update(&board_forhash);
+    hasher.update(input.random.as_bytes());
+    let hash = hasher.finalize();
+    let board_digest = Digest::try_from(hash.as_slice()).unwrap();
 
     // Gerar o hash da frota a partir da fleet
     //let hash = Sha256::digest(&fleet);
@@ -62,11 +69,18 @@ fn main() {
     //let hash = Sha256::digest(&data_to_hash);
 
     // Preencher o jornal com o hash da frota
-    let mut output = BaseJournal::default();
-    output.fleetid = input.fleetid.clone();
-    output.gameid = input.gameid.clone();
+    //let mut output = BaseJournal::default();
+    //output.fleetid = input.fleetid.clone();
+    //output.gameid = input.gameid.clone();
     //output.fleet = Some(input.fleet.clone());
-    output.board = Digest::try_from(hash.as_slice()).unwrap();
+    //output.board = Digest::try_from(hash.as_slice()).unwrap();
+
+    let output = BaseJournal {
+        gameid: input.gameid,
+        fleetid: input.fleetid,
+        fleet: None, // ✅ now valid
+        board: board_digest,
+    };
 
     // Faz commit do resultado
     env::commit(&output);

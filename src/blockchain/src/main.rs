@@ -384,6 +384,35 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         }
     };
 
+    let my_hit_count = game.pmap.get(&data.fleetid).map(|p| p.hit_count).unwrap_or(0);
+    if my_hit_count == 18  {
+            // Mete este jogador no fim da fila
+            if let Some(pos) = game.shot_queue.iter().position(|p| p == &data.fleetid) {
+                game.shot_queue.remove(pos);
+                game.shot_queue.push_back(data.fleetid.clone());
+            }
+
+            // diz que o próximo jogador é o primeiro da fila
+            game.next_player = game.shot_queue.front().cloned();
+
+            // Obtem o nome do próximo jogador (se houver)
+            let next_name = game
+            .next_player
+            .as_ref()
+            .and_then(|id| game.pmap.get(id).map(|p| p.name.clone()))
+            .unwrap_or("None".to_string());
+
+            //Diz que este deu wave e qual o próximo jogador a jogar
+            let msg = format!(
+                "🎮 [Game {}] 👋 Player {} waved the turn. ⏭️ Next player: {}",
+                data.gameid, data.fleetid, next_name
+            );
+            let _ = shared.tx.send(msg);
+
+            return format!("You Lost do not try to fire, sending wave 👋 ..."); // ou break, dependendo do contexto
+
+    }
+
     //save current shot for report confirmation
     game.current_shot = Some((data.pos, data.target.clone()));
 
@@ -436,8 +465,6 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         data.target,
     );
     let _ = shared.tx.send(msg);
-
-    
 
     } else {
     
@@ -712,9 +739,9 @@ fn handle_win(shared: &SharedData, input_data: &CommunicationData) -> String {
         // Verifica se todos os outros jogadores têm 18 acertos
         let others_done = game.pmap.iter()
             .filter(|(id, _)| *id != &data.fleetid)
-            .all(|(_, p)| p.hit_count == 3 /*18*/ /*1*/);
+            .all(|(_, p)| p.hit_count == 18 /*18*/ /*1*/);
 
-        if my_hit_count < 3 /*18*/ /*1*/ && others_done {
+        if my_hit_count < 18 /*18*/ /*1*/ && others_done {
             // ✅ Jogador atual venceu!
             let _player_name = game.pmap.get(&data.fleetid).map(|p| p.name.clone()).unwrap_or("Unknown".into());
             let msg = format!("🏆 Player {} won the game {}! Game over.", data.fleetid, data.gameid);

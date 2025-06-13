@@ -1,7 +1,7 @@
 use fleetcore::{FireInputs, ReportJournal};
 use risc0_zkvm::guest::env;
 use risc0_zkvm::Digest;
-use sha2::{Digest as _, Sha256};
+use sha2::{Digest as ShaDigestTrait, Sha256};
 
 fn main() {
 
@@ -33,7 +33,14 @@ fn main() {
     let report: u8 = if hit { 0 } else { 1 };
 
     // Calcula o digest do board usando sha2 e risc0_zkvm::Digest
-    let hash = Sha256::digest(&input.board);
+    //let hash = Sha256::digest(&input.board);
+    //let board_digest = Digest::try_from(hash.as_slice()).unwrap();
+
+    // Calcula o hash da board antes do tiro
+    let mut hasher = Sha256::new();
+    hasher.update(&input.board);
+    hasher.update(input.random.as_bytes());
+    let hash = hasher.finalize();
     let board_digest = Digest::try_from(hash.as_slice()).unwrap();
 
     let mut board_value = input.board.clone(); // Make a mutable copy
@@ -45,10 +52,17 @@ fn main() {
     }
 
     // Digest of updated board
-    let next_board_digest = {
-        let hash = Sha256::digest(&board_value);
-        Digest::try_from(hash.as_slice()).unwrap()
-    };
+    //let next_board_digest = {
+    //    let hash = Sha256::digest(&board_value);
+    //    Digest::try_from(hash.as_slice()).unwrap()
+    //};
+
+    // Calcula o hash da board resultante
+    let mut hasher_next = Sha256::new();
+    hasher_next.update(&board_value);
+    hasher_next.update(input.random.as_bytes());
+    let hash_next = hasher_next.finalize();
+    let next_board_digest = Digest::try_from(hash_next.as_slice()).unwrap();
 
     // fleet out to be secure
     let output = ReportJournal {

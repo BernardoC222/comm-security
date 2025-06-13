@@ -1,7 +1,7 @@
 use fleetcore::{FireInputs, FireJournal};
 use risc0_zkvm::guest::env;
 use risc0_zkvm::Digest;
-use sha2::{Digest as _, Sha256};
+use sha2::{Digest as ShaDigestTrait, Sha256};
 
 fn main() {
     // read the input
@@ -32,7 +32,15 @@ fn main() {
     //let hit = fleet.iter().any(|&(bx, by)| bx == x && by == y);
 
     // Calcula o digest do board usando sha2 e risc0_zkvm::Digest
-    let hash = Sha256::digest(&input.board);
+    //let hash = Sha256::digest(&input.board);
+    //let board_digest = Digest::try_from(hash.as_slice()).unwrap();
+
+
+    // Concatena board e random para o hash
+    let mut hasher = Sha256::new();
+    hasher.update(&input.board);
+    hasher.update(input.random.as_bytes());
+    let hash = hasher.finalize();
     let board_digest = Digest::try_from(hash.as_slice()).unwrap();
 
     let output = FireJournal {
