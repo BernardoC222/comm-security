@@ -4,10 +4,8 @@ use risc0_zkvm::Digest;
 use sha2::{Digest as _, Sha256};
 
 fn main() {
-
     // read the input
-    let input: FireInputs = env::read();
-  // TODO: do something with the input
+    let mut input: FireInputs = env::read();
 
     // Reconstrói a fleet a partir da string "x1,y1;x2,y2;..."
     let fleet: Vec<(u8, u8)> = input
@@ -32,9 +30,17 @@ fn main() {
     let hit = fleet.iter().any(|&(bx, by)| bx == x && by == y);
     let report: u8 = if hit { 0 } else { 1 };
 
-    // Calcula o digest do board usando sha2 e risc0_zkvm::Digest
-    let hash = Sha256::digest(&input.board);
-    let board_digest = Digest::try_from(hash.as_slice()).unwrap();
+    let original_board = input.board.clone();
+
+    // Atualiza o board se for hit
+    let idx = (y * 10 + x) as usize;
+    if hit && input.board[idx] == 1 {
+        input.board[idx] = 2;
+    }
+
+    // Calcula os digests
+    let board_digest = Digest::try_from(Sha256::digest(&original_board).as_slice()).unwrap();
+    let updated_board_digest = Digest::try_from(Sha256::digest(&input.board).as_slice()).unwrap();
 
     let output = ReportJournal {
         fleetid: input.fleetid,
@@ -43,9 +49,8 @@ fn main() {
         report,
         pos: input.pos,
         board: board_digest,
-        next_board: board_digest,
+        next_board: updated_board_digest,
     };
-    //let output = FireJournal::default();
 
     // write public output to the journal
     env::commit(&output);

@@ -124,7 +124,8 @@
         const gridContainer = document.querySelector('.grid');
         const board = decodeURIComponent('{board}').split(',');
         const shots = decodeURIComponent('{shots}').split(',');
-        // Create the 10x10 grid
+
+        // Criação da grelha 10x10
         const cell = document.createElement('div');
         cell.classList.add('cell_empty');
         gridContainer.appendChild(cell);
@@ -143,7 +144,7 @@
             }
             const cell = document.createElement('div');
             cell.classList.add('cell');
-            if (board.includes(i.toString())) {
+            if (board[i] === "1") {
                 cell.style.backgroundColor = 'black';
             } else if (shots.includes(i.toString())) {
                 cell.style.backgroundColor = 'red';
@@ -161,44 +162,77 @@
             gridContainer.appendChild(cell);
         }
 
-        function submitForm(event) {
-            //event.preventDefault();
+        // Atualiza o board do backend e visual antes de submeter o form (para Report)
+        async function atualizarBoardDoBackend(gameid, fleetid) {
+            //const res = await fetch(`/get_board?gameid=${encodeURIComponent(gameid)}&fleetid=${encodeURIComponent(fleetid)}`);
+            //const board = await res.json(); // array de 100 posições
+            //document.getElementById('board').value = board.join(',');
+            //atualizarTabuleiroVisual(board);
+            return Promise.resolve();
+        }
 
-            document.body.style.cursor = "wait";
-            getBoard(event);
-            const form = document.querySelector('form');
-            //form.submit(); // Submit the form programmatically
-            setTimeout(() => {
-                const buttons = form.querySelectorAll('button[type="submit"]');
-                buttons.forEach(button => button.disabled = true);
-            }, 10); // Small delay (0 ms)
+        function atualizarTabuleiroVisual(board) {
+            const cells = document.querySelectorAll('.cell');
+            for (let i = 0; i < 100; i++) {
+                if (board[i] == 2) cells[i].style.backgroundColor = 'red';
+                else if (board[i] == 1) cells[i].style.backgroundColor = 'black';
+                else cells[i].style.backgroundColor = 'white';
+            }
         }
 
         function getBoard(event) {
             const form = document.querySelector('form');
-            const board = [];
+            const boardArr = Array(100).fill(0);
             const shots = [];
             const cells = document.querySelectorAll('.cell');
             cells.forEach((cell, index) => {
                 if (cell.style.backgroundColor === 'black') {
-                    board.push(index);
+                    boardArr[index] = 1;
                 }
                 if (cell.style.backgroundColor === 'red') {
                     shots.push(index);
                 }
             });
-            form.querySelector('#board').value = encodeURIComponent(board.join(','));
-            form.querySelector('#shots').value = encodeURIComponent(shots.join(','));
+
+            form.querySelector('#board').value = boardArr.join(',');
+            form.querySelector('#shots').value = shots.join(',');
             const button = event.submitter;
             if (button.value !== 'Join') {
                 form.querySelector('input[name="gameid"]').value = '{gameid}';
                 form.querySelector('input[name="fleet"]').value = '{fleetid}';
             }
         }
+
+        function submitForm(event) {
+            document.body.style.cursor = "wait";
+            const button = event.submitter;
+            const form = document.querySelector('form');
+            if (button && button.value === 'Report') {
+                event.preventDefault();
+                const gameid = document.querySelector('input[name="gameid"]').value;
+                const fleetid = document.querySelector('input[name="fleetid"]').value;
+                atualizarBoardDoBackend(gameid, fleetid).then(() => {
+                    getBoard(event);
+                    form.submit();
+                    setTimeout(() => {
+                        const buttons = form.querySelectorAll('button[type="submit"]');
+                        buttons.forEach(button => button.disabled = true);
+                    }, 10);
+                });
+            } else {
+                getBoard(event);
+                setTimeout(() => {
+                    const buttons = form.querySelectorAll('button[type="submit"]');
+                    buttons.forEach(button => button.disabled = true);
+                }, 10);
+            }
+        }
+
+        document.querySelector('form').onsubmit = submitForm;
     </script>
 
     <div>
-        <form action="/submit" method="post" onsubmit="submitForm(event)">
+        <form action="/submit" method="post">
             <input type="hidden" name="board" id="board">
             <input type="hidden" name="shots" id="shots">
             <input type="hidden" name="random" id="random" value="{random}">

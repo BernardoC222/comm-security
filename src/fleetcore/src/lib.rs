@@ -68,7 +68,6 @@ pub struct ReportJournal {
     pub fleetid: String, //add information
     pub gameid: String,
     pub fleet: String,
-    //pub report: String,
     pub report: u8,
     pub pos: u8,
     pub board: Digest,

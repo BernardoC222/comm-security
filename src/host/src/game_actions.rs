@@ -42,12 +42,13 @@ pub async fn join_game(idata: FormData) -> String {
         Err(err) => return err,
     };
 
-    // TO DO: Rebuild the receipt
     let mut fleet = Vec::new();
-    for &i in &board {
-        let x = (i % 10) as u8;
-        let y = (i / 10) as u8;
-        fleet.push((x, y));
+    for (idx, &cell) in board.iter().enumerate() {
+        if cell == 1 {
+            let x = (idx % 10) as u8;
+            let y = (idx / 10) as u8;
+            fleet.push((x, y));
+        }
     }
 
     // Validar a frota
@@ -86,15 +87,15 @@ pub async fn fire(idata: FormData) -> String {
         Err(err) => return err,
     };
 
-    // TO DO: Rebuild the receipt
-
-    // Reconstrói a fleet string (igual ao join)
     let mut fleet = Vec::new();
-    for &i in &board {
-        let x_f = (i % 10) as u8;
-        let y_f = (i / 10) as u8;
-        fleet.push((x_f, y_f));
+    for (idx, &cell) in board.iter().enumerate() {
+        if cell == 1 {
+            let x = (idx % 10) as u8;
+            let y = (idx / 10) as u8;
+            fleet.push((x, y));
+        }
     }
+
     let fleet_str = fleet
         .iter()
         .map(|(x, y)| format!("{},{}", x, y))
@@ -128,15 +129,16 @@ pub async fn report(idata: FormData) -> String {
         Ok(values) => values,
         Err(err) => return err,
     };
-    // TO DO: Rebuild the receipt
 
-    // Reconstrói a fleet string (igual ao join)
     let mut fleet = Vec::new();
-    for &i in &board {
-        let x_f = (i % 10) as u8;
-        let y_f = (i / 10) as u8;
-        fleet.push((x_f, y_f));
+    for (idx, &cell) in board.iter().enumerate() {
+        if cell == 1 {
+            let x = (idx % 10) as u8;
+            let y = (idx / 10) as u8;
+            fleet.push((x, y));
+        }
     }
+
     let fleet_str = fleet
         .iter()
         .map(|(x, y)| format!("{},{}", x, y))
@@ -155,7 +157,6 @@ pub async fn report(idata: FormData) -> String {
         random,
         pos,
         target: _report,
-        //report: _report,
     };
 
     // Chama a função síncrona para criar o receipt

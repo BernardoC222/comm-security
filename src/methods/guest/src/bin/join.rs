@@ -4,11 +4,10 @@ use risc0_zkvm::Digest;
 use sha2::{Digest as _, Sha256};
 
 fn main() {
-    // read the input
+    // Lê os inputs
     let input: BaseInputs = env::read();
 
-    // TODO: do something with the input
-
+    // Reconstrói a fleet a partir da string "x1,y1;x2,y2;..."
     let fleet: Vec<(u8, u8)> = input
         .fleet
         .split(';')
@@ -22,27 +21,24 @@ fn main() {
         })
         .collect();
 
+    // Debug prints (opcional)
+    // println!("DEBUG fleet (guest): {:?}", fleet);
+    // println!("DEBUG board (guest): {:?}", input.board);
+
     // Validar se os navios estão dentro dos limites do tabuleiro
     for &(x, y) in &fleet {
         assert!(x < 10 && y < 10, "Navio fora do tabuleiro");
     }
 
-    // Transformar as coordenadas da frota em bytes para se poder criar o hash
-    let mut fleet_bytes = Vec::new();
-    for &(x, y) in &fleet {
-        fleet_bytes.push(x);
-        fleet_bytes.push(y);
-    }
+    // Calcula o hash do board (igual ao fire e report)
+    let board_digest = Digest::try_from(Sha256::digest(&input.board).as_slice()).unwrap();
 
-    // Gerar o hash da frota
-    let hash = Sha256::digest(&fleet_bytes);
-
-    // Preencher o jornal com o hash da frota
+    // Preencher o journal com o hash do board
     let mut output = BaseJournal::default();
     output.fleetid = input.fleetid.clone();
     output.gameid = input.gameid.clone();
     output.fleet = input.fleet.clone();
-    output.board = Digest::try_from(hash.as_slice()).unwrap();
+    output.board = board_digest;
 
     // Faz commit do resultado
     env::commit(&output);

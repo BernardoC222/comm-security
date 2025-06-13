@@ -3,6 +3,10 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
+use axum::extract::Query;
+
+use serde::Deserialize;
+
 use axum::{
     extract::Extension,
     response::{sse::Event, Html, IntoResponse},
@@ -29,7 +33,8 @@ struct Player {
     current_state: Digest,
     // criar tabela para cada jogador para ter shots
     shots: [u8; 100], // 0 = sem tiro, 1 = falha, 2 = acerto
-    hit_count: u32,  // 👈 new field
+    hit_count: u32,   // 👈 new field
+    board: Vec<u8>,
 }
 
 struct Game {
@@ -45,7 +50,20 @@ struct SharedData {
     tx: broadcast::Sender<String>,
     gmap: Arc<Mutex<HashMap<String, Game>>>,
     rng: Arc<Mutex<rand::rngs::StdRng>>,
-    
+}
+
+// Endpoint para obter o board de um jogador
+#[axum::debug_handler]
+async fn get_board(
+    Query(params): Query<HashMap<String, String>>,
+    Extension(shared): Extension<SharedData>,
+) -> Json<Vec<u8>> {
+    let gameid = params.get("gameid").expect("gameid param missing");
+    let fleetid = params.get("fleetid").expect("fleetid param missing");
+    let gmap = shared.gmap.lock().unwrap();
+    let game = gmap.get(gameid).expect("game not found");
+    let player = game.pmap.get(fleetid).expect("player not found");
+    Json(player.board.clone())
 }
 
 #[tokio::main]
@@ -64,6 +82,7 @@ async fn main() {
         .route("/", get(index))
         .route("/logs", get(logs))
         .route("/chain", post(smart_contract))
+        .route("/get_board", get(get_board))
         .layer(Extension(shared));
 
     // Run our app with hyper
@@ -140,7 +159,6 @@ fn pos_str_to_index(pos: &str) -> Option<u8> {
     }
 }
 
-
 async fn smart_contract(
     Extension(shared): Extension<SharedData>,
     Json(input_data): Json<CommunicationData>,
@@ -162,31 +180,43 @@ fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
             .unwrap();
         return "Could not verify receipt".to_string();
     }
+
     let data: BaseJournal = input_data.receipt.journal.decode().unwrap();
+
     let mut gmap = shared.gmap.lock().unwrap();
     let game = gmap.entry(data.gameid.clone()).or_insert(Game {
         pmap: HashMap::new(),
-        next_player: Some(data.fleet.clone()),
-        next_report: None, 
-        current_shot: None,  // initialize current_shot as None
+        next_player: Some(data.fleetid.clone()),
+        next_report: None,
+        current_shot: None, // initialize current_shot as None
     });
+
     let player_inserted = game
         .pmap
-        .entry(data.fleet.clone())
+        .entry(data.fleetid.clone())
         .or_insert_with(|| Player {
             name: data.fleetid.clone(), //estava fleet
             current_state: data.board.clone(),
             shots: [0; 100], // 👈 Initialize all shots to 0
-            hit_count: 0, // 👈 initialize to 0
+            hit_count: 0,    // 👈 initialize to 0
+            board: vec![0; 100],
         })
         .current_state
         == data.board;
+
     let mesg = if player_inserted {
         //format!("[Game {}] Player with fleet ID: {} joined", data.gameid, data.fleetid)
-        format!("🎮 [Game {}] 🚀 Player with fleet ID {} joined", data.gameid, data.fleetid)
+        format!(
+            "🎮 [Game {}] 🚀 Player with fleet ID {} joined",
+            data.gameid, data.fleetid
+        )
     } else {
-        format!("❌ Player {} already in game {} ", data.fleetid, data.gameid)
+        format!(
+            "❌ Player {} already in game {} ",
+            data.fleetid, data.gameid
+        )
     };
+
     shared.tx.send(mesg).unwrap();
     "OK".to_string()
 }
@@ -202,7 +232,9 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
     let data: FireJournal = match input_data.receipt.journal.decode() {
         Ok(d) => d,
         Err(_) => {
-            let _ = shared.tx.send("Erro a decodificar o FireJournal".to_string());
+            let _ = shared
+                .tx
+                .send("Erro a decodificar o FireJournal".to_string());
             return "Failed to decode journal".to_string();
         }
     };
@@ -213,18 +245,31 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
     let game = match gmap.get_mut(&data.gameid) {
         Some(g) => g,
         None => {
-            let _ = shared.tx.send(format!("Jogo {} não encontrado", data.gameid));
+            let _ = shared
+                .tx
+                .send(format!("Jogo {} não encontrado", data.gameid));
             return format!("Game {} not found", data.gameid);
         }
     };
 
-    // Verifica se o jogador alvo está no mesmo jogo procurando pelo nome
-    let player_entry = game.pmap
-        .iter_mut()
-        .find(|(_, p)| p.name == data.target);
+    // Impedir fire se houver report pendente
+    if game.current_shot.is_some() {
+        let _ = shared
+            .tx
+            .send("Tens de dar report antes de jogar novamente".to_string());
+        return "Wait for report".to_string();
+    }
 
-    let (target_key, target_player) = match player_entry {
-        Some((key, player)) => (key.clone(), player),
+    // Verifica se é a vez do jogador correto
+    if game.next_player.as_ref() != Some(&data.fleetid) {
+        let _ = shared
+            .tx
+            .send(format!("❌ Out-of-order fire by player {}", data.fleetid));
+        return "Not your turn".to_string();
+    }
+
+    let target_player = match game.pmap.get_mut(&data.target) {
+        Some(player) => player,
         None => {
             let _ = shared.tx.send(format!(
                 "❌ Target player {} not found in game {}",
@@ -234,52 +279,26 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         }
     };
 
-    //update recorded shots grid
-    //let index =  pos_str_to_index(&data.pos.to_string()).unwrap_or(100); // Convert position to index
+    // Atualiza shots do alvo
     if let Some(target_player) = game.pmap.get_mut(&data.target) {
         if data.pos < 100 {
-            target_player.shots[data.pos as usize] = 1; // or 2 if it’s a hit, you decide but it is only on the report that we do this
+            target_player.shots[data.pos as usize] = 1;
             let _ = shared.tx.send(format!(
                 "✅ Shot registered at position ({}) for player {}",
-                data.pos,
-                data.target
+                data.pos, data.target
             ));
         }
     }
 
-    //save current shot for report confirmation
-    //game.current_shot = Some(index);
+    // Salva o tiro para confirmação do report
     game.current_shot = Some((data.pos, data.target.clone()));
 
-
-    // Lógica simples para demonstrar:
-    // Verifica se é a vez do jogador correto
-    if game.next_player.as_ref() != Some(&data.fleet) {
-        let _ = shared.tx.send(format!("❌ Out-of-order fire by player {}", data.fleetid));
-        return "Not your turn".to_string();
-    }
-
-    // Atualizar estado do jogador alvo, ou lógica do jogo ...
-    // Por exemplo, poderia marcar o disparo na board atual do jogador
-
-    // Vamos apenas atualizar o current_state do jogador para o novo estado recebido no journal
+    // Atualizar estado do jogador (board hash)
     if let Some(player) = game.pmap.get_mut(&data.fleet) {
         player.current_state = data.board.clone();
     }
 
-    // Definir o próximo jogador
-    let next_player = game
-        .pmap
-        .keys()
-        .filter(|k| *k != &data.fleet)
-        .choose(&mut *shared.rng.lock().unwrap());
-
-    game.next_player = next_player.cloned();
-
-    let next_player_str = match &game.next_player {
-        Some(fleetid) => fleetid.as_str(),
-        None => "None",
-    };
+    // NÃO atualizes next_player aqui!
 
     // Envia mensagem para broadcast
     let msg = format!(
@@ -287,8 +306,6 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         data.gameid,
         data.fleetid,
         xy_pos(data.pos),
-        //game.next_player
-        //next_player_str
         data.target,
     );
     let _ = shared.tx.send(msg);
@@ -297,6 +314,16 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
 }
 
 fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String {
+    println!(
+        "Recebi um report de {}",
+        input_data
+            .receipt
+            .journal
+            .decode::<ReportJournal>()
+            .map(|d| d.fleetid)
+            .unwrap_or_default()
+    );
+
     if input_data.receipt.verify(REPORT_ID).is_err() {
         let _ = shared
             .tx
@@ -307,7 +334,9 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
     let data: ReportJournal = match input_data.receipt.journal.decode() {
         Ok(d) => d,
         Err(_) => {
-            let _ = shared.tx.send("Erro a decodificar o FireJournal".to_string());
+            let _ = shared
+                .tx
+                .send("Erro a decodificar o ReportJournal".to_string());
             return "Failed to decode journal".to_string();
         }
     };
@@ -318,14 +347,19 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
     let game = match gmap.get_mut(&data.gameid) {
         Some(g) => g,
         None => {
-            let _ = shared.tx.send(format!("Jogo {} não encontrado", data.gameid));
+            let _ = shared
+                .tx
+                .send(format!("Jogo {} não encontrado", data.gameid));
             return format!("Game {} not found", data.gameid);
         }
     };
 
     // Verificar se o jogador correto está fazendo o report
-    // O report deve ser feito pelo jogador que foi atingido, ou seja, o alvo do tiro
-    if game.current_shot.as_ref().map_or(false, |(pos, target)| target != &data.fleetid) {
+    if game
+        .current_shot
+        .as_ref()
+        .map_or(false, |(_, target)| target != &data.fleetid)
+    {
         let _ = shared.tx.send(format!(
             "❌ Player {} tried to report, but they are not the target player.",
             data.fleetid
@@ -337,32 +371,33 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
     if let Some((expected_index, expected_target)) = &game.current_shot {
         if *expected_index == data.pos && expected_target == &data.fleetid {
             // Processar o report
-            let action = match data.report {
-                0 => { // Hit
+            match data.report {
+                0 => {
+                    // Hit: atualiza o array do board e o hash
                     if let Some(target_player) = game.pmap.get_mut(&data.fleetid) {
-                        if target_player.shots[data.pos as usize] == 2 {
-                            let _ = shared.tx.send(format!(
-                                "❌ Shot already hit at position ({}) for player {}",
-                                data.pos,
-                                data.fleetid
-                            ));
-                            return "Shot already hit".to_string();
-                        }
-
-                        target_player.hit_count += 1;
                         if data.pos < 100 {
-                            target_player.shots[data.pos as usize] = 2; // Marca o tiro como acerto (2)
+                            target_player.board[data.pos as usize] = 2; // Marca como atingido
+                            target_player.current_state = data.next_board.clone(); // Atualiza o hash
                             let _ = shared.tx.send(format!(
                                 "✅ Shot registered at position ({}) for player {}",
-                                data.pos,
-                                data.fleetid
+                                data.pos, data.fleetid
                             ));
                         }
                     }
-                    "💥 Hit confirmed"
-                },
-                1 => "💨 Missed shot",  // Miss
-                _ => "Unknown report",  // fallback case
+                }
+                1 => {
+                    // Miss: só atualiza o hash, mantém o board igual
+                    if let Some(target_player) = game.pmap.get_mut(&data.fleetid) {
+                        target_player.current_state = data.next_board.clone();
+                    }
+                }
+                _ => {}
+            }
+
+            let action = match data.report {
+                0 => "💥 Hit confirmed",
+                1 => "💨 Missed shot",
+                _ => "Unknown report",
             };
 
             let msg = format!(
@@ -374,15 +409,11 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
             );
             let _ = shared.tx.send(msg);
 
-            // Atualizar o próximo jogador
-            let next_player = game
-                .pmap
-                .keys()
-                .filter(|k| *k != &data.fleetid)
-                .choose(&mut *shared.rng.lock().unwrap());
+            // Atualizar o próximo jogador: o alvo do tiro (quem fez o report)
+            game.next_player = Some(data.fleetid.clone());
 
-            game.next_player = next_player.cloned();
-
+            // Limpa o current_shot para permitir nova jogada
+            game.current_shot = None;
         } else {
             let _ = shared.tx.send(format!(
                 "🎮 [Game {}] ⚠️ Report mismatch: expected report on shot at position {} on player {}, but got position {} on player {}. Report it correctly please.",
@@ -396,9 +427,6 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
     }
     "OK".to_string()
 }
-
-
-
 
 fn handle_wave(shared: &SharedData, input_data: &CommunicationData) -> String {
     // TO DO:
