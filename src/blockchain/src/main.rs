@@ -133,33 +133,159 @@ fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
         shared.tx.send("Attempting to join game with invalid receipt".to_string()).unwrap();
         return "Could not verify receipt".to_string();
     }
+
     let data: BaseJournal = input_data.receipt.journal.decode().unwrap();
+
     let mut gmap = shared.gmap.lock().unwrap();
     let game = gmap.entry(data.gameid.clone()).or_insert(Game {
         pmap: HashMap::new(),
         next_player: Some(data.fleet.clone()),
         next_report: None,
     });
+
     let player_inserted = game.pmap.entry(data.fleet.clone()).or_insert_with(|| Player {
         name: data.fleet.clone(),
         current_state: data.board.clone(),
     }).name == data.fleet;
     let mesg = if player_inserted {
-        format!("Joined game {}", data.gameid)
+        format!("🎮 [Game {}] 🚀 Player with fleet ID {} joined", data.gameid, data.fleet)
     } else {
-        format!("Player already in game {}", data.gameid)
+        format!("❌ Player {} already in game {}", data.fleet, data.gameid)
     };
     shared.tx.send(mesg).unwrap();
+
     "OK".to_string()
 }
 
 fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
-     // TO DO:
+    // Verifica a prova
+    if input_data.receipt.verify(FIRE_ID).is_err() {
+        shared.tx.send("Attempting to fire with invalid receipt".to_string()).unwrap();
+        return "Could not verify receipt".to_string();
+    }
+
+    // Decodifica o journal
+    let data: FireJournal = input_data.receipt.journal.decode().unwrap();
+
+    let mut gmap = shared.gmap.lock().unwrap();
+
+    // 1. Verifica se o jogo existe
+    let game = match gmap.get_mut(&data.gameid) {
+        Some(g) => g,
+        None => {
+            shared.tx.send(format!("Game {} does not exist", data.gameid)).unwrap();
+            return "Game does not exist".to_string();
+        }
+    };
+
+    // 2. Verifica se é a vez do jogador certo
+    match &game.next_player {
+        Some(next) if *next == data.fleet => {},
+        _ => {
+            shared.tx.send(format!("Not {}'s turn", data.fleet)).unwrap();
+            return "Not your turn".to_string();
+        }
+    }
+
+    // 3. Verifica se a frota não mudou (hash da board)
+    let player = match game.pmap.get(&data.fleet) {
+        Some(p) => p,
+        None => {
+            shared.tx.send(format!("Player {} not found in game {}", data.fleet, data.gameid)).unwrap();
+            return "Player not found".to_string();
+        }
+    };
+    if player.current_state != data.board {
+        shared.tx.send(format!("Fleet {} tried to fire with a different board!", data.fleet)).unwrap();
+        return "Fleet board does not match committed state".to_string();
+    }
+
+    // 4. Garante que não há report pendente
+    if game.next_report.is_some() {
+        return "Aguardando report do último disparo.".to_string();
+    }
+
+    // 5. Define o próximo a jogar (target)
+    if !game.pmap.contains_key(&data.target) {
+        shared.tx.send(format!("Target fleet {} does not exist in game {}", data.target, data.gameid)).unwrap();
+        return "Target fleet does not exist".to_string();
+    }
+    game.next_player = Some(data.target.clone());
+    game.next_report = Some(data.target.clone());
+
+    // 6. Escreve o disparo na blockchain (log)
+    let pos_str = xy_pos(data.pos);
+    let msg = format!(
+        "🎯 [Game {}] {} fired at {} (target: {})",
+        data.gameid, data.fleet, pos_str, data.target
+    );
+    shared.tx.send(msg).unwrap();
+
     "OK".to_string()
 }
 
 fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String {
-    // TO DO:
+    // 1. Verifica a prova
+    if input_data.receipt.verify(REPORT_ID).is_err() {
+        shared.tx.send("Attempting to report with invalid receipt".to_string()).unwrap();
+        return "Could not verify receipt".to_string();
+    }
+
+    // 2. Decodifica o journal
+    let data: ReportJournal = input_data.receipt.journal.decode().unwrap();
+
+    // 3. Busca o jogo pelo gameid
+    let mut gmap = shared.gmap.lock().unwrap();
+    let game = match gmap.get_mut(&data.gameid) {
+        Some(g) => g,
+        None => {
+            shared.tx.send(format!("Game {} does not exist", data.gameid)).unwrap();
+            return "Game does not exist".to_string();
+        }
+    };
+
+    // 4. Confirma se é o jogador correto reportando
+    match &game.next_report {
+        Some(expected) if *expected == data.fleet => {},
+        _ => {
+            shared.tx.send(format!("It's not {}'s turn to report", data.fleet)).unwrap();
+            return "Not your turn to report".to_string();
+        }
+    }
+
+    // 5. Compara o hash da board anterior
+    let player = match game.pmap.get(&data.fleet) {
+        Some(p) => p,
+        None => {
+            shared.tx.send(format!("Player {} not found in game {}", data.fleet, data.gameid)).unwrap();
+            return "Player not found".to_string();
+        }
+    };
+    if player.current_state != data.board {
+        let msg = format!(
+            "❌ Fleet {} tried to report with a different board! A new report is required.",
+            data.fleet
+        );
+        shared.tx.send(msg).unwrap();
+        return "Fleet board does not match committed state. Please submit a new report.".to_string();
+    }
+
+    // 6. Atualiza o hash da board do jogador para o novo estado
+    if let Some(player_mut) = game.pmap.get_mut(&data.fleet) {
+        player_mut.current_state = data.next_board;
+    }
+
+    // 7. Limpa next_report para liberar o próximo disparo
+    game.next_report = None;
+
+    // 8. Loga o resultado do report
+    let pos_str = xy_pos(data.pos);
+    let msg = format!(
+        "📝 [Game {}] {} reported '{}' at {}",
+        data.gameid, data.fleet, data.report, pos_str
+    );
+    shared.tx.send(msg).unwrap();
+
     "OK".to_string()
 }
 

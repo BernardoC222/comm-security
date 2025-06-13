@@ -17,7 +17,7 @@ pub use game_actions::{join_game, fire, report, wave, win};
 async fn send_receipt(action: Command, receipt: Receipt) -> String {
     let client = reqwest::Client::new();
     let res = client
-    .post("http://chain:3001/chain")
+    .post("http://chain0:3001/chain")
     .json(&CommunicationData {
         cmd: action,
         receipt,
@@ -155,7 +155,7 @@ pub fn unmarshal_report(
     .clone()
     .ok_or_else(|| "You must provide a Report value".to_string())
     .and_then(|r| {
-        if r == "Hit" || r == "Miss" {
+        if r == "hit" || r == "miss" {
             Ok(r)
         } else {
             Err("Report must be either 'Hit' or 'Miss'".to_string())

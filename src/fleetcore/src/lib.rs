@@ -23,6 +23,16 @@ pub struct FireInputs {
     pub pos: u8,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ReportInputs {
+    pub gameid: String,
+    pub fleet: String,
+    pub board: Vec<u8>,
+    pub random: String,
+    pub report: String, 
+    pub pos: u8,
+}
+
 // Enum used to define the command that will be sent to the server by the host in the communication packet
 #[derive(Deserialize,Serialize)]
 pub enum Command {Join, Fire, Report, Wave, Win}
