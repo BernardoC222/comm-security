@@ -38,6 +38,17 @@ fn generate_report_receipt(inputs: ReportInputs) -> risc0_zkvm::Receipt {
     prover.prove(env, REPORT_ELF).unwrap().receipt
 }
 
+fn generate_wave_receipt(base_inputs: BaseInputs) -> risc0_zkvm::Receipt {
+    let env = risc0_zkvm::ExecutorEnv::builder()
+        .write(&base_inputs)
+        .unwrap()
+        .build()
+        .unwrap();
+    let prover = risc0_zkvm::default_prover();
+    prover.prove(env, WAVE_ELF).unwrap().receipt
+}
+
+
 pub async fn join_game(idata: FormData) -> String {
     let (gameid, fleetid, board, random) = match unmarshal_data(&idata) {
         Ok(values) => values,
@@ -141,14 +152,18 @@ pub async fn wave(idata: FormData) -> String {
         Ok(values) => values,
         Err(err) => return err,
     };
-    // TO DO: Rebuild the receipt
 
-    // Uncomment the following line when you are ready to send the receipt
-    //send_receipt(Command::Fire, receipt).await
-    // Comment out the following line when you are ready to send the receipt
-    "OK".to_string()
+    let base_inputs = BaseInputs {
+        gameid,
+        fleet: fleetid,
+        board,
+        random,
+    };
+
+    let receipt = generate_wave_receipt(base_inputs);
+
+    send_receipt(Command::Wave, receipt).await
 }
-
 pub async fn win(idata: FormData) -> String {
     let (gameid, fleetid, board, random) = match unmarshal_data(&idata) {
         Ok(values) => values,
