@@ -5,6 +5,7 @@ use methods::{FIRE_ELF, JOIN_ELF, REPORT_ELF, WAVE_ELF, WIN_ELF};
 use risc0_zkvm::{default_prover, guest::env, ExecutorEnv};
 
 use crate::{send_receipt, unmarshal_data, unmarshal_fire, unmarshal_report, FormData};
+use axum::response::Html;
 
 fn generate_join_receipt(base_inputs: BaseInputs) -> risc0_zkvm::Receipt {
     let env = ExecutorEnv::builder()
@@ -121,6 +122,12 @@ pub async fn fire(idata: FormData) -> String {
         .collect::<Vec<String>>()
         .join(";");
 
+    // Validar o board
+    if let Err(e) = validar_board(&board) {
+        // Lida com o erro de forma adequada: pode ser panic!, return, etc.
+        panic!("Erro no board: {}", e);
+    }
+
     // Calcula o índice linear do tiro (dentro dos 10x10)
     let pos = (y * 10 + x) as u8;
 
@@ -143,7 +150,7 @@ pub async fn fire(idata: FormData) -> String {
     //"OK".to_string()
 }
 
-pub async fn report(idata: FormData) -> String {
+pub async fn report(idata: FormData) ->  String  {
     let (gameid, fleetid, board, random, _report, x, y) = match unmarshal_report(&idata) {
         Ok(values) => values,
         Err(err) => return err,
@@ -174,6 +181,12 @@ pub async fn report(idata: FormData) -> String {
     println!("pos: {}", pos);
     println!("------------------");
 
+    let board_str = board.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(",");
+    let shots_str = vec![pos.to_string()].join(","); // or a real `shots` vec if you have it
+
+
+    let response_html = format!(r#"<script>markShot({});</script>"#, pos);
+
     // Prepara os inputs para o guest
     let report_inputs = FireInputs {
         fleetid,
@@ -190,9 +203,11 @@ pub async fn report(idata: FormData) -> String {
     let receipt = generate_report_receipt(report_inputs);
 
     // Uncomment the following line when you are ready to send the receipt
-    send_receipt(Command::Report, receipt).await
+    send_receipt(Command::Report, receipt).await;
     // Comment out the following line when you are ready to send the receipt
     //"OK".to_string()
+    response_html
+
 }
 
 pub async fn wave(idata: FormData) -> String {
@@ -250,6 +265,11 @@ pub async fn win(idata: FormData) -> String {
         .map(|(x, y)| format!("{},{}", x, y))
         .collect::<Vec<String>>()
         .join(";");
+
+    // Validar o board
+    if let Err(e) = validar_board(&board) {
+        panic!("Erro no board: {}", e);
+    }
 
     // Prepara os inputs para o guest
     let base_inputs = BaseInputs {
@@ -330,3 +350,12 @@ fn validar_frota(fleet: &[(u8, u8)]) -> Result<(), String> {
 
     Ok(())
 }
+
+fn validar_board(board: &[u8]) -> Result<(), String> {
+    if board.is_empty() {
+        Err("Board está vazio".to_string())
+    } else {
+        Ok(())
+    }
+}
+

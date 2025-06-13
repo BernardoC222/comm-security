@@ -1,8 +1,3 @@
-// Remove the following 3 lines to enable compiler checkings
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-#![allow(dead_code)]
-
 use axum::{
     extract::Form,
     response::Html,

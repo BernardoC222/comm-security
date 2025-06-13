@@ -195,6 +195,15 @@
                 form.querySelector('input[name="fleet"]').value = '{fleetid}';
             }
         }
+
+        function markShot(pos) {
+            const cells = document.querySelectorAll('.cell');
+            const cell = cells[pos];
+            if (cell) {
+                cell.style.backgroundColor = 'red';
+            }
+        }
+
     </script>
 
     <div>

@@ -47,7 +47,7 @@ pub struct CommunicationData {
 pub struct BaseJournal {
     pub fleetid: String,
     pub gameid: String,
-    pub fleet: String,
+    pub fleet: Option<String>, // ✅ optional
     pub board: Digest,
 }
 
@@ -56,7 +56,7 @@ pub struct BaseJournal {
 pub struct FireJournal {
     pub fleetid: String,
     pub gameid: String,
-    pub fleet: String,
+    pub fleet: Option<String>, // ✅ optional
     pub board: Digest,
     pub target: String,
     pub pos: u8,

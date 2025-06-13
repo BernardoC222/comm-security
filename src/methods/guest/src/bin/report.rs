@@ -55,6 +55,7 @@ fn main() {
         fleetid: input.fleetid,
         gameid: input.gameid,
         fleet: None, // ✅ now valid
+        //fleet: Some(input.fleet), // debug 
         report,
         pos: input.pos,
         board: board_digest,

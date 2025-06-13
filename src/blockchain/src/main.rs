@@ -384,26 +384,8 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         }
     };
 
-    // Verifica se o jogador alvo está no mesmo jogo procurando pelo nome
-    //let player_entry = game.pmap
-    //    .iter_mut()
-    //    .find(|(_, p)| p.name == data.target);
-
-    //let (target_key, target_player) = match player_entry {
-    //    Some((key, player)) => (key.clone(), player),
-    //    None => {
-    //        let _ = shared.tx.send(format!(
-    //            "❌ Target player {} not found in game {}",
-    //            data.target, data.gameid
-    //        ));
-    //        return format!("Target player {} is not in this game", data.target);
-    //    }
-    //};
-
     //save current shot for report confirmation
-    //game.current_shot = Some(index);
     game.current_shot = Some((data.pos, data.target.clone()));
-
 
     // Lógica simples para demonstrar:
     // Verifica se é a vez do jogador correto
@@ -412,7 +394,10 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         return "Not your turn".to_string();
     }
 
-    // Atualizar estado do jogador alvo, ou lógica do jogo ...
+    // Verifica se têm mesmo aquela hash do jogador e deu update na sua Board
+    if game.pmap.get(&data.fleetid).map(|player| &player.current_state) == Some(&data.board) {
+
+        // Atualizar estado do jogador alvo, ou lógica do jogo ...
     // Por exemplo, poderia marcar o disparo na board atual do jogador
 
     // Vamos apenas atualizar o current_state do jogador para o novo estado recebido no journal
@@ -451,6 +436,17 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         data.target,
     );
     let _ = shared.tx.send(msg);
+
+    
+
+    } else {
+    
+        let _ = shared.tx.send(format!(
+                "🎮 [Game {}] ⚠️  Board mismatch, Player {} update your fleet on your app before Fire! ",
+                data.gameid,
+                data.fleetid
+            ));
+    }
 
     "OK".to_string()
 }
@@ -716,9 +712,9 @@ fn handle_win(shared: &SharedData, input_data: &CommunicationData) -> String {
         // Verifica se todos os outros jogadores têm 18 acertos
         let others_done = game.pmap.iter()
             .filter(|(id, _)| *id != &data.fleetid)
-            .all(|(_, p)| p.hit_count == 1 /*18*/ /*1*/);
+            .all(|(_, p)| p.hit_count == 3 /*18*/ /*1*/);
 
-        if my_hit_count < 1 /*18*/ /*1*/ && others_done {
+        if my_hit_count < 3 /*18*/ /*1*/ && others_done {
             // ✅ Jogador atual venceu!
             let _player_name = game.pmap.get(&data.fleetid).map(|p| p.name.clone()).unwrap_or("Unknown".into());
             let msg = format!("🏆 Player {} won the game {}! Game over.", data.fleetid, data.gameid);

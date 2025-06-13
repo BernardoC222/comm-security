@@ -38,7 +38,8 @@ fn main() {
     let output = FireJournal {
         fleetid: input.fleetid,
         gameid: input.gameid,
-        fleet: input.fleet,
+        fleet: None, // ✅ now valid
+        //fleet: Some(input.fleet), // debug 
         board: board_digest,
         target: input.target,
         pos: input.pos,

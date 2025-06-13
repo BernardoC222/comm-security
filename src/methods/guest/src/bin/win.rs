@@ -11,11 +11,13 @@ fn main() {
     // Calcula o digest do board usando sha2 e risc0_zkvm::Digest
     let hash = Sha256::digest(&input.board);
 
+    // board = [ 5 34 57 ]
+
     // TODO: do something with the input
     let mut output = BaseJournal::default();
     output.fleetid = input.fleetid.clone();
     output.gameid = input.gameid.clone();
-    output.fleet = input.fleet.clone();
+    //output.fleet = input.fleet.clone();
     output.board = Digest::try_from(hash.as_slice()).unwrap();
 
     // write public output to the journal
