@@ -38,6 +38,26 @@ fn generate_report_receipt(inputs: ReportInputs) -> risc0_zkvm::Receipt {
     prover.prove(env, REPORT_ELF).unwrap().receipt
 }
 
+fn generate_win_receipt(inputs: BaseInputs) -> risc0_zkvm::Receipt {
+    let env = ExecutorEnv::builder()
+        .write(&inputs)
+        .unwrap()
+        .build()
+        .unwrap();
+    let prover = default_prover();
+    let receipt = prover.prove(env, WIN_ELF).unwrap().receipt;
+}
+
+fn generate_wave_receipt(inputs: BaseInputs) -> risc0_zkvm::Receipt {
+    let env = ExecutorEnv::builder()
+        .write(&inputs)
+        .unwrap()
+        .build()
+        .unwrap();
+    let prover = default_prover();
+    let receipt = prover.prove(env, WAVE_ELF).unwrap().receipt;
+}
+
 pub async fn join_game(idata: FormData) -> String {
     let (gameid, fleetid, board, random) = match unmarshal_data(&idata) {
         Ok(values) => values,
@@ -68,11 +88,6 @@ pub async fn fire(idata: FormData) -> String {
         Ok(values) => values,
         Err(err) => return err,
     };
-
-    // Garante que há pelo menos um barco vivo
-    if board.is_empty() {
-        return "Não é possível disparar: nenhum barco vivo no tabuleiro.".to_string();
-    }
 
     // Calcula o índice linear do tiro (dentro dos 10x10)
     let pos = (y * 10 + x) as u8;
@@ -141,12 +156,17 @@ pub async fn wave(idata: FormData) -> String {
         Ok(values) => values,
         Err(err) => return err,
     };
-    // TO DO: Rebuild the receipt
 
-    // Uncomment the following line when you are ready to send the receipt
-    //send_receipt(Command::Fire, receipt).await
-    // Comment out the following line when you are ready to send the receipt
-    "OK".to_string()
+    let base_inputs = BaseInputs {
+        gameid,
+        fleet: fleetid,
+        board,
+        random,
+    };
+
+    let receipt = generate_wave_receipt(base_inputs);
+
+    send_receipt(Command::Wave, receipt).await
 }
 
 pub async fn win(idata: FormData) -> String {
@@ -154,12 +174,17 @@ pub async fn win(idata: FormData) -> String {
         Ok(values) => values,
         Err(err) => return err,
     };
-    // TO DO: Rebuild the receipt
 
-    // Uncomment the following line when you are ready to send the receipt
-    //send_receipt(Command::Fire, receipt).await
-    // Comment out the following line when you are ready to send the receipt
-    "OK".to_string()
+    let base_inputs = fleetcore::BaseInputs {
+        gameid,
+        fleet: fleetid,
+        board,
+        random,
+    };
+
+    let receipt = generate_win_receipt(base_inputs);
+
+    send_receipt(Command::Win, receipt).await
 }
 
 fn validar_frota_board(board: &Vec<u8>) -> Result<(), String> {

@@ -27,11 +27,14 @@ use methods::{FIRE_ID, JOIN_ID, REPORT_ID, WAVE_ID, WIN_ID};
 struct Player {
     name: String,
     current_state: Digest,
+    hits: u32,
 }
+
 struct Game {
     pmap: HashMap<String, Player>,
     next_player: Option<String>,
     next_report: Option<String>,
+    shot_queue: VecDeque<String>,
 }
 
 #[derive(Clone)]
@@ -141,11 +144,15 @@ fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
         pmap: HashMap::new(),
         next_player: Some(data.fleet.clone()),
         next_report: None,
+        shot_queue: VecDeque::new(),
     });
+
+    game.shot_queue.push_back(data.fleet.clone());
 
     let player_inserted = game.pmap.entry(data.fleet.clone()).or_insert_with(|| Player {
         name: data.fleet.clone(),
         current_state: data.board.clone(),
+        hits: 0,
     }).name == data.fleet;
     let mesg = if player_inserted {
         format!("🎮 [Game {}] 🚀 Player with fleet ID {} joined", data.gameid, data.fleet)
@@ -205,6 +212,20 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         return "Aguardando report do último disparo.".to_string();
     }
 
+    // 4.1. Verifica se o alvo ainda tem barcos (menos de 18 hits)
+    let target_player = match game.pmap.get(&data.target) {
+        Some(p) => p,
+        None => {
+            shared.tx.send(format!("Target fleet {} does not exist in game {}", data.target, data.gameid)).unwrap();
+            return "Target fleet does not exist".to_string();
+        }
+    };
+
+    if target_player.hits >= 18 {
+        shared.tx.send(format!("Target fleet {} is already sunk!", data.target)).unwrap();
+        return "Cannot fire: target fleet is already sunk.".to_string();
+    }
+
     // 5. Define o próximo a jogar (target)
     if !game.pmap.contains_key(&data.target) {
         shared.tx.send(format!("Target fleet {} does not exist in game {}", data.target, data.gameid)).unwrap();
@@ -213,6 +234,11 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
     game.next_player = Some(data.target.clone());
     game.next_report = Some(data.target.clone());
 
+    if let Some(pos) = game.shot_queue.iter().position(|p| p == &data.fleet) {
+        game.shot_queue.remove(pos);
+        game.shot_queue.push_back(data.fleet.clone());
+    }
+
     // 6. Escreve o disparo na blockchain (log)
     let pos_str = xy_pos(data.pos);
     let msg = format!(
@@ -220,6 +246,14 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
         data.gameid, data.fleet, pos_str, data.target
     );
     shared.tx.send(msg).unwrap();
+
+    // Atualiza o turno e o last_played do jogador que fez a ação
+    if let Some(game) = gmap.get_mut(&data.gameid) {
+        game.turn += 1;
+        if let Some(player_mut) = game.pmap.get_mut(&data.fleet) {
+         player_mut.last_played = game.turn;
+        }
+    }
 
     "OK".to_string()
 }
@@ -273,6 +307,9 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
     // 6. Atualiza o hash da board do jogador para o novo estado
     if let Some(player_mut) = game.pmap.get_mut(&data.fleet) {
         player_mut.current_state = data.next_board;
+        if data.report.to_lowercase() == "hit" {
+            player_mut.hits += 1;
+        }
     }
 
     // 7. Limpa next_report para liberar o próximo disparo
@@ -286,15 +323,104 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
     );
     shared.tx.send(msg).unwrap();
 
+    // Atualiza o turno e o last_played do jogador que fez a ação
+    if let Some(game) = gmap.get_mut(&data.gameid) {
+        game.turn += 1;
+        if let Some(player_mut) = game.pmap.get_mut(&data.fleet) {
+            player_mut.last_played = game.turn;
+        }
+    }
+
     "OK".to_string()
 }
 
 fn handle_wave(shared: &SharedData, input_data: &CommunicationData) -> String {
-    // TO DO:
+    if input_data.receipt.verify(WAVE_ID).is_err() {
+        shared.tx.send("Attempting to wave with invalid receipt".to_string()).unwrap();
+        return "Could not verify receipt".to_string();
+    }
+
+    let data: BaseJournal = input_data.receipt.journal.decode().unwrap();
+
+    let mut gmap = shared.gmap.lock().unwrap();
+    let game = match gmap.get_mut(&data.gameid) {
+        Some(g) => g,
+        None => {
+            shared.tx.send(format!("Game {} does not exist", data.gameid)).unwrap();
+            return "Game does not exist".to_string();
+        }
+    };
+
+    // Precaução: só pode fazer wave se for a sua vez
+    if game.next_player.as_ref() != Some(&data.fleet) {
+        let _ = shared
+            .tx
+            .send(format!("❌ Out-of-order wave by player {}", data.fleet));
+        return "Not your turn".to_string();
+    }
+
+    // 4. Garante que não há report pendente
+    if game.next_report.is_some() {
+        return "Aguardando report do último disparo.".to_string();
+    }
+
+
+    // Atualiza o próximo jogador
+    // Mete este jogador no fim da fila
+    if let Some(pos) = game.shot_queue.iter().position(|p| p == &data.fleet) {
+    game.shot_queue.remove(pos);
+    game.shot_queue.push_back(data.fleet.clone());
+    }
+
+    // diz que o próximo jogador é o primeiro da fila
+    game.next_player = game.shot_queue.front().cloned();
+
+
+    // Obtem o nome do próximo jogador (se houver)
+    let next_name = game
+    .next_player
+    .as_ref()
+    .and_then(|id| game.pmap.get(id).map(|p| p.name.clone()))
+    .unwrap_or("None".to_string());
+
+    //Diz que este deu wave e qual o próximo jogador a jogar
+    let msg = format!(
+        "🎮 [Game {}] 👋 Player {} waved the turn. ⏭️ Next player: {}",
+        data.gameid, data.fleet, next_name
+    );
+
+    let _ = shared.tx.send(msg);
+
     "OK".to_string()
 }
 
 fn handle_win(shared: &SharedData, input_data: &CommunicationData) -> String {
-    // TO DO:
-    "OK".to_string()
+    if input_data.receipt.verify(WIN_ID).is_err() {
+        return "Could not verify receipt".to_string();
+    }
+
+    let data: WinJournal = input_data.receipt.journal.decode().unwrap();
+
+    let mut gmap = shared.gmap.lock().unwrap();
+    let game = match gmap.get(&data.gameid) {
+        Some(g) => g,
+        None => return "Game does not exist".to_string(),
+    };
+
+    // Verifica se o hash da board bate com o estado salvo do jogador
+    let player = match game.pmap.get(&data.fleet) {
+        Some(p) => p,
+        None => return "Player not found".to_string(),
+    };
+    if player.current_state != data.board {
+        return "Fleet board does not match committed state".to_string();
+    }
+
+    if player.hits != 18 {
+        return "Cannot claim victory: your fleet is not fully sunk (must have 18 hits).".to_string();
+    }
+
+    // Vitória aceita!
+    // (Aqui você pode registrar a vitória, encerrar o jogo, etc.)
+    "Victory claimed!".to_string()
 }
