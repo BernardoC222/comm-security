@@ -34,14 +34,21 @@ fn main() {
         fleet_bytes.push(y);
     }
 
+    let mut board_forhash: Vec<u8> = Vec::new();
+    for &(x, y) in &fleet {
+        let pos = y * 10 + x;  // Linear index
+        board_forhash.push(pos);
+    }
+    board_forhash.sort(); // Optional, but ensures consistency
+
     // Gerar o hash da frota
-    let hash = Sha256::digest(&fleet_bytes);
+    let hash = Sha256::digest(&board_forhash);
 
     // Preencher o jornal com o hash da frota
     let mut output = BaseJournal::default();
     output.fleetid = input.fleetid.clone();
     output.gameid = input.gameid.clone();
-    output.fleet = input.fleet.clone();
+    //output.fleet = input.fleet.clone();
     output.board = Digest::try_from(hash.as_slice()).unwrap();
 
     // Faz commit do resultado

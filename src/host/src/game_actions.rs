@@ -166,6 +166,14 @@ pub async fn report(idata: FormData) -> String {
     // Calcula o índice linear do tiro (dentro dos 10x10)
     let pos = (y * 10 + x) as u8;
 
+    println!("--- RAW OUTPUT ---");
+    println!("fleetid: {}", fleetid);
+    println!("gameid: {}", gameid);
+    println!("fleet: {:?}", fleet);
+    println!("fleet: {:?}", board);
+    println!("pos: {}", pos);
+    println!("------------------");
+
     // Prepara os inputs para o guest
     let report_inputs = FireInputs {
         fleetid,

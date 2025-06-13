@@ -67,7 +67,7 @@ pub struct FireJournal {
 pub struct ReportJournal {
     pub fleetid: String, //add information
     pub gameid: String,
-    pub fleet: String,
+    pub fleet: Option<String>, // ✅ optional
     //pub report: String,
     pub report: u8,
     pub pos: u8,

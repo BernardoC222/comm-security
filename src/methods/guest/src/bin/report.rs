@@ -36,15 +36,32 @@ fn main() {
     let hash = Sha256::digest(&input.board);
     let board_digest = Digest::try_from(hash.as_slice()).unwrap();
 
+    let mut board_value = input.board.clone(); // Make a mutable copy
+
+    //modifica a board e cria outra board digest
+    // If hit, remove the position from the board
+    if hit {
+        board_value.retain(|&p| p != input.pos);
+    }
+
+    // Digest of updated board
+    let next_board_digest = {
+        let hash = Sha256::digest(&board_value);
+        Digest::try_from(hash.as_slice()).unwrap()
+    };
+
+    // fleet out to be secure
     let output = ReportJournal {
         fleetid: input.fleetid,
         gameid: input.gameid,
-        fleet: input.fleet,
+        fleet: None, // ✅ now valid
         report,
         pos: input.pos,
         board: board_digest,
-        next_board: board_digest,
+        next_board: next_board_digest,
     };
+
+    //
     //let output = FireJournal::default();
 
     // write public output to the journal
