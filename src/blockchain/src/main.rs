@@ -20,6 +20,7 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
+use std::collections::VecDeque;
 
 use fleetcore::{BaseJournal, Command, FireJournal, CommunicationData, ReportJournal};
 use methods::{FIRE_ID, JOIN_ID, REPORT_ID, WAVE_ID, WIN_ID};
@@ -32,6 +33,7 @@ struct Game {
     pmap: HashMap<String, Player>,
     next_player: Option<String>,
     next_report: Option<String>,
+    shot_queue: VecDeque<String>,
 }
 
 #[derive(Clone)]
@@ -141,7 +143,10 @@ fn handle_join(shared: &SharedData, input_data: &CommunicationData) -> String {
         pmap: HashMap::new(),
         next_player: Some(data.fleet.clone()),
         next_report: None,
+        shot_queue: VecDeque::new(),
     });
+
+    game.shot_queue.push_back(data.fleet.clone());
 
     let player_inserted = game.pmap.entry(data.fleet.clone()).or_insert_with(|| Player {
         name: data.fleet.clone(),
@@ -212,6 +217,11 @@ fn handle_fire(shared: &SharedData, input_data: &CommunicationData) -> String {
     }
     game.next_player = Some(data.target.clone());
     game.next_report = Some(data.target.clone());
+
+    if let Some(pos) = game.shot_queue.iter().position(|p| p == &data.fleet) {
+        game.shot_queue.remove(pos);
+        game.shot_queue.push_back(data.fleet.clone());
+    }
 
     // 6. Escreve o disparo na blockchain (log)
     let pos_str = xy_pos(data.pos);
@@ -290,9 +300,65 @@ fn handle_report(shared: &SharedData, input_data: &CommunicationData) -> String 
 }
 
 fn handle_wave(shared: &SharedData, input_data: &CommunicationData) -> String {
-    // TO DO:
+    if input_data.receipt.verify(WAVE_ID).is_err() {
+        shared.tx.send("Attempting to wave with invalid receipt".to_string()).unwrap();
+        return "Could not verify receipt".to_string();
+    }
+
+    let data: BaseJournal = input_data.receipt.journal.decode().unwrap();
+
+    let mut gmap = shared.gmap.lock().unwrap();
+    let game = match gmap.get_mut(&data.gameid) {
+        Some(g) => g,
+        None => {
+            shared.tx.send(format!("Game {} does not exist", data.gameid)).unwrap();
+            return "Game does not exist".to_string();
+        }
+    };
+
+        // Precaução: só pode fazer wave se for a sua vez
+    if game.next_player.as_ref() != Some(&data.fleet) {
+        let _ = shared
+            .tx
+            .send(format!("❌ Out-of-order wave by player {}", data.fleet));
+        return "Not your turn".to_string();
+    }
+
+    // 4. Garante que não há report pendente
+    if game.next_report.is_some() {
+        return "Aguardando report do último disparo.".to_string();
+    }
+
+
+// Atualiza o próximo jogador
+    // Mete este jogador no fim da fila
+    if let Some(pos) = game.shot_queue.iter().position(|p| p == &data.fleet) {
+    game.shot_queue.remove(pos);
+    game.shot_queue.push_back(data.fleet.clone());
+    }
+
+    // diz que o próximo jogador é o primeiro da fila
+    game.next_player = game.shot_queue.front().cloned();
+
+
+    // Obtem o nome do próximo jogador (se houver)
+    let next_name = game
+    .next_player
+    .as_ref()
+    .and_then(|id| game.pmap.get(id).map(|p| p.name.clone()))
+    .unwrap_or("None".to_string());
+
+    //Diz que este deu wave e qual o próximo jogador a jogar
+    let msg = format!(
+        "🎮 [Game {}] 👋 Player {} waved the turn. ⏭️ Next player: {}",
+        data.gameid, data.fleet, next_name
+    );
+
+    let _ = shared.tx.send(msg);
+
     "OK".to_string()
 }
+
 
 fn handle_win(shared: &SharedData, input_data: &CommunicationData) -> String {
     // TO DO:
